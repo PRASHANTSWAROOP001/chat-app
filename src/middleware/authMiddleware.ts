@@ -1,5 +1,5 @@
 import { Request, NextFunction, Response} from "express";
-import jwt, {JwtPayload} from "jsonwebtoken"
+import jwt from "jsonwebtoken"
 import { DecodedUserPayload } from "../types/http";
 const jwtsecret = process.env.JWT_SECRET;
 

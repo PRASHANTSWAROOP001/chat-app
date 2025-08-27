@@ -22,7 +22,7 @@ services:
       - redisdata:/data
     command: [
       "redis-server",
-      "--append-only",
+      "--appendonly",
       "yes"
     ]
 

@@ -1,67 +1,105 @@
 import e from "express";
 import userRouter from "./routes/userRoute";
-import helmet from "helmet"
-import cors from "cors"
-import http from "http"
-import WebSocket from "ws"
-import jwt from "jsonwebtoken"
+import helmet from "helmet";
+import cors from "cors";
+import http from "http";
+import WebSocket from "ws";
+
+import { redis } from "./utils/db/db";
 import { DecodedUserPayload } from "./types/http";
-const app = e();
 
+import jwt from "jsonwebtoken";
+import url from "url";
 
-const port = process.env.PORT || 5000
+const secret = process.env.JWT_SECRET;
 
-const secret = process.env.JWT_SECRET
-
-if(!secret){
-    console.warn("missing keys")
-    process.exit(1)
+if (!secret) {
+  console.warn("❌ Missing JWT_SECRET");
+  process.exit(1);
 }
 
-const server = http.createServer(app)
 
-export const wss = new WebSocket.Server({server, handleProtocols:(protocols, request)=>{
-    for (const protocol of protocols){
-        if(protocol.startsWith("chat-auth-v1, ")){
-            const token = protocol.substring("chat-auth-v1,".length).trim()
-            if(token){
-                try {
-                    
-                    const decoded = jwt.verify(token,secret) as DecodedUserPayload
 
-                    request.user = decoded
 
-                    return protocol;
+const app = e();
 
-                } catch (error) {
-                        console.log('JWT verification failed during protocol handshake:', error);
-                        // Returning false rejects the connection without establishing a WebSocket.
-                        return false;
-            }
-            }
+const port = process.env.PORT || 5000;
 
-        }
-    }
 
-       console.log('WebSocket connection rejected: No valid "chat-auth-v1" protocol or token.');
-    return false;
-}})
+const server = http.createServer(app);
 
-app.use(e.json())
-app.use(helmet())
-app.use(cors())
+// middlewares
+app.use(e.json());
+app.use(helmet());
+app.use(cors());
 
-app.use("/health", (req:e.Request, res:e.Response)=>{
-    res.json({
-        message:"hello world"
+// healthcheck
+app.use("/health", (_req, res) => {
+  res.json({ message: "hello world" });
+});
+
+// routes
+app.use("/auth", userRouter);
+
+server.listen(port, () => {
+  console.log(`🚀 Server running on port ${port}`);
+});
+
+// ✅ WebSocket server without handleProtocols
+export const wss = new WebSocket.Server({ server });
+
+
+wss.on("connection", async (ws, req) => {
+  
+  const { query } = url.parse(req.url!, true);
+  const token = query?.token as string | undefined;
+
+  if (!token) {
+    console.error("❌ No token provided");
+    ws.close();
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, secret) as DecodedUserPayload;
+    (req as any).user = decoded;
+    (ws as any).user = decoded;
+    console.log("✅ User connected:", decoded);
+
+    const userInfo = JSON.stringify({
+        server:process.env.SERVER_ID||"server-1",
+        name:req.user?.name,
     })
-})
+
+    await redis.set(`user:${req.user?.id}`, userInfo)
+
+        ws.send(
+      JSON.stringify({
+        type: "system",
+        message: `Now you can send one-to-one messages as ${req.user}`,
+      })
+    );
+
+  } catch (err) {
+    console.error("❌ JWT verification failed:", err);
+    ws.close();
+  }
 
 
-app.use("/auth", userRouter)
+//   ws.on("message", (message)=>{
+//     let parsedString;
+//     try {
 
-app.listen(port, ()=>{
-    console.log("app started listening on port 4000")
-})
+
+        
+//     } catch (error) {
+        
+//     }
+//   })
+
+
+
+
+});
 
 

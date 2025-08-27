@@ -106,7 +106,7 @@ export const loginUser = async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       {
-        id: searchUser.id,
+        id: searchUser.mobileNo,
         name: searchUser.name,
       },
       jwtsecret,
