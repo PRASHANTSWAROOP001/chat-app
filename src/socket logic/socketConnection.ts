@@ -5,6 +5,7 @@ import url from "url";
 import { redis } from "../utils/db/db";
 import { DecodedUserPayload } from "../types/http";
 import { subscriber } from "../utils/db/db";
+import {prismaClient} from "../utils/db/db"
 const secret = process.env.JWT_SECRET!;
 const serverId = process.env.SERVER_ID!
 
@@ -64,7 +65,19 @@ async function checkUserAvailability(recipientId:string):Promise<string>{
     const userStatus = await redis.get(`user:${recipientId}`)
 
     if(!userStatus){
-      return "offline";
+      //handles user not registered on platform
+      const searchUser = await prismaClient.user.findFirst({
+        where:{
+          mobileNo:recipientId
+        }
+      })
+
+      if(!searchUser){
+        return "not exists"
+      }else{
+        return "offline"
+      }
+      
     }
 
     const recipientJson:{
@@ -174,6 +187,12 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
       message: `User ${recipientId} is not online.`,
     }));
     return;
+  }
+  else if(isAvailable == "not avilable"){
+    ws.send(JSON.stringify({
+      type:"system",
+      message:`User ${recipientId} does not exists. Invite them to signup.`,
+    }))
   }
 
   // ✅ Publish the message
