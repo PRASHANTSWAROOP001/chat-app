@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { userRegistrationSchema, loginSchema } from "../utils/zod/userzod";
+import { userRegistrationSchema, loginSchema } from "../utils/zod/ZodSchema";
 import { prismaClient } from "../utils/db/db";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -50,7 +50,7 @@ export const userRegitration = async (req: Request, res: Response) => {
     });
 
     return res.json({
-      success: false,
+      success: true,
       message: "account created successfully",
       id: savedData.id,
     });
@@ -106,7 +106,8 @@ export const loginUser = async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       {
-        id: searchUser.mobileNo,
+        id: searchUser.id,
+        mobileNo:searchUser.mobileNo,
         name: searchUser.name,
       },
       jwtsecret,

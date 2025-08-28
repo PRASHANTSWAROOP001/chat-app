@@ -5,6 +5,7 @@ import { JwtPayload } from 'jsonwebtoken';
 // which will be attached to the request object.
 interface DecodedUserPayload extends JwtPayload {
   id: string;
+  mobileNo:string,
   name: string;
 }
 
