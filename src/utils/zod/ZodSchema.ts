@@ -12,3 +12,8 @@ export const loginSchema = z.object({
     mobileNo:z.string().min(10),
     password:z.string().min(6)
 })
+
+
+export const blockingUserPayload = z.object({
+    blockedUserMobileNo:z.string().min(10,"Please send 10 digits cell no to block other") 
+})

@@ -53,4 +53,5 @@ model BlockedUsers {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  @@index([blockedId]) // for faster read
 }
