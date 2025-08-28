@@ -57,45 +57,51 @@ interface MessageFormat {
   content: string,
 }
 
+type UserAvailability =
+  | { status: "not_exists" }
+  | { status: "blocked" }
+  | { status: "offline" }
+  | { status: "online"; server: string; name: string; id: string }
 
 
 
-async function checkUserAvailability(recipientId: string): Promise<string> {
+
+async function checkUserAvailability(recipientId: string, senderId: string): Promise<UserAvailability> {
   try {
+
+    const isBlocked = await redis.sismember(`blockedUser:${recipientId}`, senderId)
+
+    if (isBlocked == 1) {
+      return { status: "blocked" }
+    }
 
     const userStatus = await redis.get(`user:${recipientId}`)
 
-    if (!userStatus) {
-      //handles user not registered on platform
-      const searchUser = await prismaClient.user.findFirst({
-        where: {
-          mobileNo: recipientId
-        }
-      })
-
-      if (!searchUser) {
-        console.log("not exists")
-        return "not exists"
-      } else {
-        console.log("offline")
-        return "offline"
+    if (userStatus) {
+      const recipientJson = JSON.parse(userStatus) as {
+        server: string,
+        id: string,
+        name: string
       }
-
+      return { status: "online", ...recipientJson }
     }
 
-    const recipientJson: {
-      server: string,
-      name: string
-      id: string
-    } = JSON.parse(userStatus)
+    const recipient = await prismaClient.user.findUnique({
+      where: {
+        mobileNo: recipientId,
+      }
+    })
 
-    console.log(recipientJson)
+    if (!recipient) {
+      return { status: "not_exists" }
+    }
 
-    return recipientJson.server
+    return { status: "offline" }
+
 
   } catch (error) {
     console.error("Error while checking the recipientStatus", error)
-    return "offline";
+    return { status: "offline" }
   }
 }
 
@@ -114,71 +120,71 @@ async function PublishMessage(messageData: PublishMessageFormat): Promise<boolea
 }
 
 
-async function ValidateWebSocketConnection(ws:WebSocket, req:IncomingMessage){
+async function ValidateWebSocketConnection(ws: WebSocket, req: IncomingMessage) {
   const { query } = url.parse(req.url!, true);
-    const token = query?.token as string | undefined;
+  const token = query?.token as string | undefined;
 
-    if (!token) {
-      console.error("No token provided");
-      ws.close();
-      return;
-    }
+  if (!token) {
+    console.error("No token provided");
+    ws.close();
+    return;
+  }
 
-    try {
-      const decoded = jwt.verify(token, secret) as DecodedUserPayload;
-      (ws as any).user = decoded;
-      console.log("User connected:", decoded);
+  try {
+    const decoded = jwt.verify(token, secret) as DecodedUserPayload;
+    (ws as any).user = decoded;
+    console.log("User connected:", decoded);
 
-      connectedClient.set(decoded.mobileNo, ws)
+    connectedClient.set(decoded.mobileNo, ws)
 
-      const userInfo = JSON.stringify({
-        server: process.env.SERVER_ID || "server-1",
-        name: decoded.name,
-        id: decoded.id
-      });
+    const userInfo = JSON.stringify({
+      server: process.env.SERVER_ID || "server-1",
+      name: decoded.name,
+      id: decoded.id
+    });
 
-      // add user to the redis database along with its server
+    // add user to the redis database along with its server
 
-      await redis.set(`user:${decoded.mobileNo}`, userInfo);
+    await redis.set(`user:${decoded.mobileNo}`, userInfo);
 
-      ws.send(JSON.stringify({
-        type: "system",
-        message: `Now you can send one-to-one messages as ${decoded.name}`,
-      }));
-    } catch (err) {
-      console.error("❌ JWT verification failed:", err);
-      ws.close();
-    }
+    ws.send(JSON.stringify({
+      type: "system",
+      message: `Now you can send one-to-one messages as ${decoded.name}`,
+    }));
+  } catch (err) {
+    console.error("❌ JWT verification failed:", err);
+    ws.close();
+  }
 }
 
 
-function extractValidateMessage(ws:WebSocket, message:WebSocket.RawData):MessageFormat|undefined{
-     let parsedData: MessageFormat;
+function extractValidateMessage(ws: WebSocket, message: WebSocket.RawData): MessageFormat | undefined {
+  let parsedData: MessageFormat;
 
-      try {
-        parsedData = JSON.parse(message.toString());
-      } catch (error) {
-        console.error("❌ Error parsing data:", error);
-        ws.send(JSON.stringify({
-          type: "system",
-          message: "Invalid message format. Expected JSON with {to, content}",
-        }));
-        return; // stop further execution
-      }
+  try {
+    parsedData = JSON.parse(message.toString());
+  } catch (error) {
+    console.error("❌ Error parsing data:", error);
+    ws.send(JSON.stringify({
+      type: "system",
+      message: "Invalid message format. Expected JSON with {to, content}",
+    }));
+    return; // stop further execution
+  }
 
-      const recipientId = parsedData.to;
-      const content = parsedData.content;
-      //const sender = (ws as any).user?.id;
+  const recipientId = parsedData.to;
+  const content = parsedData.content;
+  //const sender = (ws as any).user?.id;
 
-      if (!recipientId || !content) {
-        ws.send(JSON.stringify({
-          type: "system",
-          message: "Both 'to' and 'content' fields are required",
-        }));
-        return;
-      }
+  if (!recipientId || !content) {
+    ws.send(JSON.stringify({
+      type: "system",
+      message: "Both 'to' and 'content' fields are required",
+    }));
+    return;
+  }
 
-      return parsedData     
+  return parsedData
 }
 
 
@@ -188,69 +194,89 @@ const connectedClient = new Map<string, WebSocket>()
 export default function registerSocketHandlers(wss: WebSocket.Server) {
   wss.on("connection", async (ws, req) => {
     console.log("connection event fired");
-    
-    ValidateWebSocketConnection(ws, req);
-  
-    ws.on("message", async (message) => {
-      
-      const userData = extractValidateMessage(ws, message)
 
-      if(!userData){
+    // validate the connection and attach user payload to ws
+    ValidateWebSocketConnection(ws, req);
+
+    // Handle messages
+    ws.on("message", async (message) => {
+      const userData = extractValidateMessage(ws, message);
+
+      if (!userData) {
         console.log("invalid data handled");
         return;
       }
 
-      const isAvailable = await checkUserAvailability(userData.to);
+      const sender = (ws as any).user as DecodedUserPayload;
 
-      if (isAvailable == "offline") {
-        ws.send(JSON.stringify({
-          type: "system",
-          message: `User ${userData.to} is not online.`,
-        }));
-        return;
-      }
-      else if (isAvailable == "not exists") {
-        ws.send(JSON.stringify({
-          type: "system",
-          message: `User ${userData.to} does not exists. Invite them to signup.`,
-        }))
-        return;
-      }
+      const isAvailable = await checkUserAvailability(userData.to, sender.id);
 
-      // ✅ Publish the message
-      const publishSuccess = await PublishMessage({
-        to: userData.to,
-        content: userData.content,
-        server: isAvailable
-      });
+      console.log("Availability result:", isAvailable);
 
-      if (publishSuccess) {
-        ws.send(JSON.stringify({
-          type: "system",
-          message: `Message delivered to ${userData.to}`,
-        }));
-      } else {
-        ws.send(JSON.stringify({
-          type: "system",
-          message: `Failed to deliver message to ${userData.to}`,
-        }));
+      // TODO: route/send the message if available, or handle offline/block cases
+
+      switch (isAvailable.status) {
+        case "not_exists":
+          console.log("user does not exist");
+          ws.send(JSON.stringify({
+            type: "system",
+            message: "User does not exist. Invite them on this platform"
+          }));
+          break;
+
+        case "blocked":
+          console.log("user is blocked");
+          ws.send(JSON.stringify({
+            type: "system",
+            message: "Recipient has blocked you! Can't be helped sorry!"
+          }));
+          break;
+
+        case "offline":
+          console.log("user is offline");
+          ws.send(JSON.stringify({
+            type: "system",
+            message: "User is offline. Message will be dropped off! Stay tuned for offline feature."
+          }));
+          // TODO: store in DB for offline delivery
+          break;
+
+        case "online":
+          console.log("user is online, publishing message");
+
+          await PublishMessage({
+            to: userData.to,
+            content: userData.content,  // make sure you pass content
+            server: isAvailable.server! // from checkUserAvailability
+          });
+
+          // (optional) also ACK back to sender that it was delivered
+          ws.send(JSON.stringify({
+            type: "ack",
+            message: "Message delivered to recipient’s server"
+          }));
+
+          break;
+
+        default:
+          console.warn("Unexpected status", isAvailable);
       }
     });
 
+    // Handle errors
     ws.on("error", (error) => {
-      console.log("error at the ws instance ", error)
-    })
+      console.error("error at the ws instance", error);
+    });
 
-
-    // handles the closing makes user offline
+    // Handle close (mark user offline + cleanup)
     ws.on("close", async () => {
-      if ((ws as any).user?.id) {
-        connectedClient.delete((ws as any).user.mobileNo)
-        await redis.del(`user:${(ws as any).user.mobileNo}`);
-        console.log("user disconnected");
+      const user = (ws as any).user;
+      if (user?.mobileNo) {
+        connectedClient.delete(user.mobileNo);
+        await redis.del(`user:${user.mobileNo}`);
+        console.log("user disconnected:", user.mobileNo);
       }
     });
   });
-
-
 }
+

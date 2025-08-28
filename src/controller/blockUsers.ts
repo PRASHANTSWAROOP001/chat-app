@@ -51,7 +51,7 @@ export const blockUser = async (req:Request, res:Response)=>{
             }
         })
                         // blockPerson mobileNo -> blockedPersonId
-        await redis.sadd(`blockedUser:${user.mobileNo}`, searchBlockedId.id)
+        await redis.sadd(`blockedUser:${user.mobileNo}`, searchBlockedId.id.toString())
 
 
         res.json({
