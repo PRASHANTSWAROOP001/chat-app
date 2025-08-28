@@ -23,6 +23,10 @@ model User {
 
   sentMessages     Messages[] @relation("SentMessage")
   receivedMessages Messages[] @relation("RecievedMessage")
+
+  blocksMade       BlockedUsers[] @relation("Blocker") // users I blocked
+  blocksReceived   BlockedUsers[] @relation("Blocked") // users who blocked me
+
   @@index([mobileNo])
 }
 
@@ -36,4 +40,17 @@ model Messages {
 
   sender     User @relation("SentMessage", fields: [senderId], references: [id])
   recipient  User @relation("RecievedMessage", fields: [recipientId], references: [id])
+}
+
+model BlockedUsers {
+  id          String @id @default(cuid())
+
+  blockerId   Int
+  blockedId   Int
+
+  blocker     User @relation("Blocker", fields: [blockerId], references: [id])
+  blocked     User @relation("Blocked", fields: [blockedId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
