@@ -3,6 +3,7 @@ import { userRegistrationSchema, loginSchema } from "../utils/zod/ZodSchema";
 import { prismaClient } from "../utils/db/db";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import logger from "../utils/logger/pinoLogger";
 
 const jwtsecret = process.env.JWT_SECRET;
 
@@ -12,11 +13,12 @@ if (!jwtsecret) {
 }
 
 export const userRegitration = async (req: Request, res: Response) => {
+  logger.info("signup endpoint hit.")
   try {
     const userData = req.body;
     const parsedData = userRegistrationSchema.safeParse(userData);
-
     if (!parsedData.success) {
+      logger.warn("user payload does not match zodSchema")
       res.json({
         success: false,
         message: parsedData.error.issues,
@@ -31,6 +33,7 @@ export const userRegitration = async (req: Request, res: Response) => {
     });
 
     if (searchMobileNo) {
+      logger.warn("user has an existing account")
       res.status(401).json({
         success: false,
         message: "user already exists",
@@ -55,7 +58,7 @@ export const userRegitration = async (req: Request, res: Response) => {
       id: savedData.id,
     });
   } catch (error) {
-    console.error("error happend while creating the user", error);
+    logger.error(`error happend while creating the user ${error}`)
     return res.status(500).json({
       success: false,
       message: "unexpected error happened",
@@ -64,12 +67,15 @@ export const userRegitration = async (req: Request, res: Response) => {
 };
 
 export const loginUser = async (req: Request, res: Response) => {
+  logger.info("login endpoint hit")
   try {
     const body = req.body;
 
     const parsedData = loginSchema.safeParse(body);
+    
 
     if (!parsedData.success) {
+        logger.warn("user payload does not match zodSchema")
       res.status(400).json({
         success: false,
         message: parsedData.error.issues,
@@ -84,6 +90,7 @@ export const loginUser = async (req: Request, res: Response) => {
     });
 
     if (!searchUser) {
+      logger.info("user tried to login with non existant data")
       res.status(404).json({
         success: false,
         message: "No user exists",
@@ -97,6 +104,7 @@ export const loginUser = async (req: Request, res: Response) => {
     );
 
     if (!validatePassword) {
+      logger.warn("user entered wrong password. Validation Failed")
       res.status(401).json({
         success: false,
         message: "Invalid password",
@@ -122,7 +130,7 @@ export const loginUser = async (req: Request, res: Response) => {
       token,
     });
   } catch (error) {
-    console.error(error);
+    logger.error(`error happened while login ${error}`)
     res.status(500).json({
       success: false,
       message: "Internal server error",
