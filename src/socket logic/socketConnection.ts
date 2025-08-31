@@ -3,13 +3,13 @@ import WebSocket from "ws";
 import { redis } from "../utils/db/db";
 import { MessageTypes } from "../types/socketTypes";
 import { subscriber } from "../utils/db/db";
-import { prismaClient } from "../utils/db/db"
 import logger from "../utils/logger/pinoLogger";
 import ValidateWebSocketConnection from "./utils/validateSocketConnection";
 import extractValidateMessage from "./utils/extractMessage";
 
 import { handleChat } from "./socketRouter/chat";
 import { handleAck } from "./socketRouter/handleAck";
+import { handleOfflineMessages } from "./utils/handleOfflineChats";
 
 const serverId = process.env.SERVER_ID!
 
@@ -24,19 +24,45 @@ subscriber.subscribe(`message:${serverId}`, (err, count) => {
 
 
 
-subscriber.on("message", (channel, message) => {
+subscriber.on("message", async (channel, message) => {
   console.log("message recieved on channel", channel)
   try {
 
-    const data: { to: string, content: string } = JSON.parse(message)
+    const data: MessageTypes = JSON.parse(message)
 
-    const ws = connectedClient.get(data.to)
+    switch (data.type) {
+      case "chat.message":
+        const ws = connectedClient.get(data.to)
 
-    if (ws && ws.readyState == WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: "message",
-        content:data
-      }))
+        if (ws && ws.readyState == WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "chat.message",
+            content: data
+          }))
+        }
+        break;
+      case "chat.ack":
+        console.log("chat ack recieved")
+        const newws = connectedClient.get(data.to)
+        if (newws && newws.readyState == WebSocket.OPEN) {
+          newws.send(JSON.stringify({
+            type: "chat.ack",
+            content: data
+          }))
+
+          if(data.streamId && data.mode == "offline"){
+            const status =await redis.xdel(`stream:message:${data.from}`, data.streamId)
+            console.log("status", status)
+          }
+        }
+
+        break;
+
+      case "system.presence":
+        console.log("system message")
+        break;
+      case "system.error":
+        break;
     }
 
 
@@ -46,10 +72,6 @@ subscriber.on("message", (channel, message) => {
 
   }
 })
-
-
-
-
 
 
 
@@ -64,6 +86,7 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
 
 
     ValidateWebSocketConnection(ws, req, connectedClient);
+    handleOfflineMessages(ws, (ws as any).user.mobileNo)
 
     // Handle messages
     ws.on("message", async (message) => {
@@ -76,7 +99,7 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
 
       switch (messageData.type) {
         case "chat.message":
-          await handleChat(ws, messageData, connectedClient);
+          await handleChat(ws, messageData);
           break;
 
         case "chat.ack":

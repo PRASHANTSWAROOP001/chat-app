@@ -6,11 +6,7 @@ import { redis } from "../../utils/db/db";
 import {prismaClient} from "../../utils/db/db"
 
 
-
-
-
-
-export async function handleChat(ws:WebSocket, payload:ChatMessage, connectedClient:Map<string, WebSocket>):Promise<void>{
+export async function handleChat(ws:WebSocket, payload:ChatMessage):Promise<void>{
     try {
 
         console.log("payload", payload)
@@ -34,9 +30,10 @@ export async function handleChat(ws:WebSocket, payload:ChatMessage, connectedCli
                 break;
             case "offline":
                 logger.warn("user tried to send the message to offline recipeint")
+                await handleOfflineMessage(payload)
                 ws.send(JSON.stringify({
                     type:'system',
-                    message:"Offline message will be dropped currently! Stay tuned for offline delivery"
+                    message:"Stay tuned for offline delivery"
                 }))
                 break;
             case "online":
@@ -112,6 +109,24 @@ async function checkUserAvailability(recipientId: string, senderId: string): Pro
     console.error("Error while checking the recipientStatus", error)
     return { status: "offline" }
   }
+}
+
+async function handleOfflineMessage(message:ChatMessage):Promise<void>{
+    logger.info("handling offline messages")
+  try {
+   
+    await redis.xadd(`stream:message:${message.to}`, 
+      "*",
+     "payload", JSON.stringify(message)
+    )
+
+  
+} catch (error) {
+
+  console.error("error while handling offline stream", error)
+
+  
+}
 }
 
 async function PublishMessage(message:ChatMessage, serverId:string):Promise<boolean>{
