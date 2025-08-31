@@ -1,5 +1,3 @@
-import WebSocket from "ws";
-
 export type MessageTypes =
   // actual chat
   | {
@@ -15,6 +13,10 @@ export type MessageTypes =
   | {
       type: "chat.ack";
       messageId: string;
+      to:string;
+      from:string;
+      mode: "online"|"offline";
+      streamId?:string;
       status: "delivered" | "read";
       timestamp: number;
     }
@@ -51,6 +53,10 @@ export type UserAvailability =
   | { status: "blocked" }
   | { status: "offline" }
   | { status: "online"; server: string; name: string; id: string }
+
+export type UserAvailabilityAck =
+ | {status:"offline"}
+ | {status:"online"; server:string, name:string, id:string}
 
 
 export type Message = MessageTypes;
