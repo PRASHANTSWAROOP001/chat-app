@@ -5,10 +5,12 @@ import url from "url";
 import logger from "../utils/logger/pinoLogger";
 import { DecodedUserPayload } from "../types/http";
 import { redis } from "../utils/db/db";
-import { Envelope } from "../types/messageValidation";
-import { parseEnvelope } from "./socketutils/messagehelper";
+import { ChatMessage, Envelope } from "../types/messageValidation";
+import { parseEnvelope, parseSubsEnvelope } from "./socketutils/messagehelper";
 import { sendSystemErrorMessage, sendSystemInfoMessage } from "./socketutils/messagehelper";
 import { handleChatMessages } from "./messagesHandlers/handleMessages";
+import { subscriber } from "../utils/db/db";
+
 
 /**
  * Connection state model:
@@ -45,6 +47,18 @@ const secret = process.env.JWT_SECRET!;
 const serverId = process.env.SERVER_ID!
 const userToWs = new Map<string, WebSocket>(); // to deliver messages needs userMobile mapped to websocket
 const wsToUser = new Map<WebSocket, string>(); // to handle termination needs websocker mapped to userMobile
+
+subscriber.subscribe(`message:${serverId}`, (error)=>{
+  if(error){
+    logger.info("error while subscribing to the channel")
+  }
+  else{
+    logger.info("subscribed to the channel.")
+  }
+})
+
+
+
 
 // Validate incoming connection and attach user
 async function checkComingConnection(
@@ -115,7 +129,7 @@ async function deliverOfflineMessages(ws:WebSocket, userMobileNo:string){
 
       // Send message to client
       ws.send(JSON.stringify({
-        type: "chat.message",
+        type: "chat",
         ...messageObj
       }));
     }
@@ -201,8 +215,6 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
 
     // pings every client in 30 seconds for responsiveness or drops the connection
     setInterval(async () => {
-      logger.info("pinging each websocket instance");
-
       for (const ws of wss.clients) {
         if (!activeConnection.get(ws)) {
           const userMobileNo = wsToUser.get(ws);
@@ -230,3 +242,52 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
 
 }
 
+
+subscriber.on("message", (channel, message) => {
+  logger.info({ channel, raw: message }, "Handling subs message");
+
+  try {
+    const validatedMessage = parseSubsEnvelope(message);
+
+    if (!validatedMessage) {
+      logger.warn({ message }, "Invalid message format received");
+      return;
+    }
+
+    switch (validatedMessage.type) {
+      case "chat":
+        sendSubsMessage(validatedMessage);
+        break;
+
+      case "ack":
+        logger.debug("Ack received, no action taken");
+        break;
+
+      default:
+        logger.warn({ validatedMessage }, "Unknown payload type received");
+        break;
+    }
+  } catch (err) {
+    logger.error({ err, channel, message }, "Error while routing subs message");
+  }
+});
+
+function getUserWs(userId: string): WebSocket | null {
+  const ws = userToWs.get(userId);
+  return ws && ws.readyState === WebSocket.OPEN ? ws : null;
+}
+
+function sendSubsMessage(payload: ChatMessage) {
+  const ws = getUserWs(payload.to);
+
+  if (!ws) {
+    logger.info({ to: payload.to }, "No stable connection to send message");
+    return;
+  }
+
+  try {
+    ws.send(JSON.stringify(payload));
+  } catch (err) {
+    logger.error({ err, payload }, "Failed to send chat message");
+  }
+}
