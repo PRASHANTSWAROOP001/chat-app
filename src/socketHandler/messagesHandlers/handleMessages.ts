@@ -1,0 +1,112 @@
+import WebSocket from "ws";
+import { ChatMessage } from "../../types/messageValidation";
+import { prismaClient, redis } from "../../utils/db/db";
+import logger from "../../utils/logger/pinoLogger";
+import { sendSystemErrorMessage, sendSystemInfoMessage } from "../socketutils/messagehelper";
+
+const serverId = process.env.SERVER_ID!
+
+
+type UserStatus = 
+ | {status:"not_exists"}
+ | {status:"blocked"}
+ | {status:"offline"}
+ | {status:"online"; server:string}
+ | {status:"error"}
+
+
+export async function handleChatMessages(ws:WebSocket,sentPayload:ChatMessage, routingMap:Map<string,WebSocket>, userId:string){
+   try {
+    const userDetails = await userStatus(sentPayload.to, userId)
+    
+    switch(userDetails.status){
+        case "not_exists":
+            sendSystemErrorMessage(ws,"user does not exists", "we cant send messages to non existant user! Invite them.")
+            break;
+        case "blocked":
+            sendSystemInfoMessage(ws, "dear user you have been blocked cant send messages!")
+            break;
+        case "offline":
+            sendSystemInfoMessage(ws, "dear user the other person is offline. Messages will be dropped! Currently")
+            break;
+
+        case "online":
+            const recipientServer = userDetails.server 
+            if(recipientServer == serverId){
+                const recipientWsInstance = routingMap.get(sentPayload.to)
+                if(recipientWsInstance && recipientWsInstance.readyState === WebSocket.OPEN){
+                    recipientWsInstance.send(JSON.stringify(sentPayload))
+                    logger.info("message sent to the other user")
+                }
+                else{
+                    logger.info("users socket connection is not open/found")
+                }
+                break;
+            }
+
+            const publishMessageStatus = await publishMessage(recipientServer, sentPayload)
+
+            if(publishMessageStatus){
+                sendSystemInfoMessage(ws, "message sent published successfully")
+                
+            }
+            else{
+                sendSystemErrorMessage(ws, "redis publish message", "error while publishing message using redis")
+                
+            }
+            break;
+
+        case "error":
+            sendSystemErrorMessage(ws, "user available status", "error while checking user status")
+            break;
+    }
+    
+   } catch (error) {
+    logger.error("error happened while")
+    console.error(error)
+    sendSystemErrorMessage(ws, "error at the message handler router level", "error while routing delivering messages")
+   }
+}
+
+async function userStatus(to:string, userId:string):Promise<UserStatus> {
+    try {
+        const isBlocked = await redis.sismember(`blockedUser:${to}`, userId);
+        if(isBlocked === 1) return { status: "blocked" };
+
+        const onlineStatus = await redis.get(`user:${to}`);
+        if(onlineStatus) {
+            try {
+                const userStatusObj = JSON.parse(onlineStatus) as { name: string, server: string, id: string };
+                if(userStatusObj?.server) {
+                    return { status: "online", server: userStatusObj.server };
+                }
+            } catch (err) {
+                logger.warn(`Invalid onlineStatus JSON for user ${to}: ${err}`);
+            }
+        }
+
+        const doesExist = await prismaClient.user.findUnique({
+            where: { mobileNo: to }
+        });
+
+        if(!doesExist) return { status: "not_exists" };
+
+        // User exists but not online and not blocked
+        return { status: "offline" };
+    } catch (error) {
+        logger.error("Error happened while handling userStatus");
+        console.error(error)
+        return { status: "error" };
+    }
+}
+
+async function publishMessage(server:string, sentPayload:ChatMessage):Promise<boolean>{
+    try {
+        await redis.publish(`message:${server}`, JSON.stringify(sentPayload))
+        return true
+    } catch (error) {
+        logger.error("error happened while publishing messages")
+        console.error(error)
+        return false
+    }
+}
