@@ -82,3 +82,13 @@ export function parseEnvelope(raw: RawData): Envelope | null {
     return null;
   }
 }
+
+export function parseSubsEnvelope(message:string):Envelope | null{
+  try {
+    const json = JSON.parse(message)
+    return EnvelopeSchema.parse(json)
+  } catch (error) {
+    console.error("error while parsing subs message", error)
+    return null;
+  }
+}
