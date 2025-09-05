@@ -92,6 +92,39 @@ async function checkComingConnection(
   }
 }
 
+// deliver offline messages and attach streamId
+
+async function deliverOfflineMessages(ws:WebSocket, userMobileNo:string){
+  try {
+    const streamKey = `offlineMessage:${userMobileNo}`;
+    const messages = await redis.xrange(streamKey, "-", "+");
+
+    if (!messages.length) return;
+
+    for (const [id, fields] of messages) {
+      // Convert array of fields to an object
+      const messageObj = Object.fromEntries(
+        fields.reduce((acc, val, i) => {
+          if (i % 2 === 0) acc.push([val, fields[i + 1]]);
+          return acc;
+        }, [] as [string, string][])
+      );
+
+      // Attach Redis stream entry ID as streamId
+      messageObj.streamId = id;
+
+      // Send message to client
+      ws.send(JSON.stringify({
+        type: "chat.message",
+        ...messageObj
+      }));
+    }
+  } catch (error) {
+    logger.error("Error delivering offline messages:");
+    console.error(error);
+  }
+}
+
 
 // Main WebSocket handler
 export default function registerSocketHandlers(wss: WebSocket.Server) {
@@ -105,6 +138,8 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
     if (!user) return;
 
     activeConnection.set(ws, true)
+
+    await deliverOfflineMessages(ws, user.mobileNo)
 
     ws.on("pong", () => {
       console.log("got ping from client.")
