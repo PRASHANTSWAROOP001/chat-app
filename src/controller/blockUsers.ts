@@ -42,7 +42,7 @@ export const blockUser = async (req:Request, res:Response)=>{
             logger.info("user tried to block non existant user")
             res.status(404).json({
                 success:false,
-                message:"user does not exist to be blocked. Invite them to block!"
+                message:"user does not exists to be blocked. Invite them to block!"
             })
             return
         }

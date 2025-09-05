@@ -3,8 +3,8 @@ import userRouter from "./routes/userRoute";
 import helmet from "helmet";
 import cors from "cors";
 import http from "http";
-import WsSingleton from "./socket logic/SocketSinglton";
-import registerSocketHandlers from "./socket logic/socketConnection";
+import WsSingleton from "./socketHandler/socketSingleton";
+import registerSocketHandlers from "./socketHandler/centralRouter";
 import blockListHandler from './routes/blockRoute'
 const app = e();
 
@@ -22,7 +22,7 @@ registerSocketHandlers(wss)
 app.use(e.json());
 app.use(helmet());
 app.use(cors({
-  origin:process.env.CLIENT_URL || "http://localhost:5173",
+  origin:process.env.CLIENT_URL || "http://localhost:5500",
   credentials:true
 }));
 
