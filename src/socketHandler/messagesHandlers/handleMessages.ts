@@ -27,7 +27,7 @@ export async function handleChatMessages(ws:WebSocket,sentPayload:ChatMessage, r
             sendSystemInfoMessage(ws, "dear user you have been blocked cant send messages!")
             break;
         case "offline":
-            sendSystemInfoMessage(ws, "dear user the other person is offline. Messages will be dropped! Currently")
+            storeOfflineMessages(sentPayload)
             break;
 
         case "online":
@@ -48,7 +48,6 @@ export async function handleChatMessages(ws:WebSocket,sentPayload:ChatMessage, r
 
             if(publishMessageStatus){
                 sendSystemInfoMessage(ws, "message sent published successfully")
-                
             }
             else{
                 sendSystemErrorMessage(ws, "redis publish message", "error while publishing message using redis")
@@ -108,5 +107,27 @@ async function publishMessage(server:string, sentPayload:ChatMessage):Promise<bo
         logger.error("error happened while publishing messages")
         console.error(error)
         return false
+    }
+}
+
+async function storeOfflineMessages(sentPayload:ChatMessage){
+    logger.info("storing the offline message")
+    try {
+
+           await redis.xadd(
+            `offlineMessage:${sentPayload.to}`, // stream key per user
+            "*",     // auto-generated ID
+            "to", sentPayload.to,                               
+            "from", sentPayload.from,
+            "messageId", sentPayload.messageId,
+            "message", sentPayload.message,
+            "mode", "offline",
+            "timestamp", sentPayload.timestamp.toString(), // Redis stores strings
+            "streamId", sentPayload.streamId || ""          // optional field
+        );
+        
+    } catch (error) {
+        logger.error("error happened while  storing the messages in redis")
+        console.error(error)
     }
 }
