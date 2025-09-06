@@ -5,11 +5,12 @@ import url from "url";
 import logger from "../utils/logger/pinoLogger";
 import { DecodedUserPayload } from "../types/http";
 import { redis } from "../utils/db/db";
-import { ChatMessage, Envelope } from "../types/messageValidation";
+import { ChatAck, ChatMessage, Envelope } from "../types/messageValidation";
 import { parseEnvelope, parseSubsEnvelope } from "./socketutils/messagehelper";
 import { sendSystemErrorMessage, sendSystemInfoMessage } from "./socketutils/messagehelper";
 import { handleChatMessages } from "./messagesHandlers/handleMessages";
 import { subscriber } from "../utils/db/db";
+import { handleAck } from "./messagesHandlers/handleAckMessages";
 
 
 /**
@@ -130,7 +131,8 @@ async function deliverOfflineMessages(ws:WebSocket, userMobileNo:string){
       // Send message to client
       ws.send(JSON.stringify({
         type: "chat",
-        ...messageObj
+        ...messageObj,
+        timestamp:parseInt(messageObj.timestamp)
       }));
     }
   } catch (error) {
@@ -181,9 +183,7 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
           break;
 
         case "ack":
-          logger.info(
-            "got an chat ack"
-          )
+          handleAck(ws, recievedMessage, userToWs, user.id)
           break;
           
         default:
@@ -198,7 +198,7 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
       console.log("❌ WS closed:", code, reason.toString());
 
       // 1. Global presence cleanup
-      await redis.del(`user:${user.mobileNo}`);
+      await terminateUserFromRedis(user.mobileNo)
 
       // 2. In-memory maps cleanup
       userToWs.delete(user.mobileNo);  // userId → ws map
@@ -224,7 +224,7 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
           if (userMobileNo) {
             userToWs.delete(userMobileNo);
             wsToUser.delete(ws);
-            await redis.del(`user:${userMobileNo}`); // ✅ works here
+            await terminateUserFromRedis(userMobileNo)
           }
 
           activeConnection.delete(ws);
@@ -260,7 +260,7 @@ subscriber.on("message", (channel, message) => {
         break;
 
       case "ack":
-        logger.debug("Ack received, no action taken");
+        sendSubsAck(validatedMessage)
         break;
 
       default:
@@ -289,5 +289,32 @@ function sendSubsMessage(payload: ChatMessage) {
     ws.send(JSON.stringify(payload));
   } catch (err) {
     logger.error({ err, payload }, "Failed to send chat message");
+  }
+}
+
+function sendSubsAck(payload:ChatAck){
+  const ws = getUserWs(payload.to)
+  if(!ws){
+    logger.info({to:payload.to}, "has no stable socket connection to send messsages")
+    return;
+  }
+  try {
+     ws.send(JSON.stringify(payload))
+  } catch (error) {
+    logger.error({error}, "error while sending chat ack message at subs")
+  
+  }
+}
+
+async function terminateUserFromRedis(userMobileNo:string){
+  try {
+
+    await redis.del(`user:${userMobileNo}`)
+    await redis.set(`lastActive:${userMobileNo}`, Date.now().toString())
+    
+  } catch (error) {
+
+    logger.error({error}, "error happened while terminating user");
+    
   }
 }
