@@ -6,6 +6,7 @@ import http from "http";
 import WsSingleton from "./socketHandler/socketSingleton";
 import registerSocketHandlers from "./socketHandler/centralRouter";
 import blockListHandler from './routes/blockRoute'
+import profileRoute from './routes/otherProfileRoute'
 const app = e();
 
 const port = process.env.PORT || 5000;
@@ -35,6 +36,8 @@ app.use("/health", (_req, res) => {
 app.use("/auth", userRouter);
 
 app.use("/block-action", blockListHandler)
+
+app.use("/profile", profileRoute)
 
 server.listen(port, () => {
   console.log(`Server running on port ${port}`);
