@@ -4,6 +4,7 @@ import { prismaClient } from "../utils/db/db";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import logger from "../utils/logger/pinoLogger";
+import { createUserGroup } from "../utils/createReadgroup";
 
 const jwtsecret = process.env.JWT_SECRET;
 
@@ -51,6 +52,8 @@ export const userRegitration = async (req: Request, res: Response) => {
         name: parsedData.data.name,
       },
     });
+
+    await createUserGroup(parsedData.data.mobileNo)
 
     return res.json({
       success: true,
