@@ -26,7 +26,7 @@ export async function handleAck(
         logger.info({sentAck},"user sent payload!")
         const userDetails = await userStatus(sentAck.to, userId);
 
-        await deleteOfflineMessages(sentAck);
+        await ackMessage(sentAck, sentAck.from);
 
         switch (userDetails.status) {
             case "not_exists":
@@ -120,14 +120,23 @@ async function userStatus(to: string, userId: string): Promise<UserStatus> {
     }
 }
 
-async function deleteOfflineMessages(ack: ChatAck) {
-    try {
-        if (ack.streamId != undefined) {
-            await redis.xdel(`offlineMessage:${ack.from}`, ack.streamId);
-        }
-    } catch (error) {
-        logger.error({ error }, "error while deleting the redis offline stream");
-    }
+export async function ackMessage(ack: ChatAck, userMobileNo: string) {
+  try {
+    if (!ack.streamId) return;
+
+    const streamKey = "chat.messages";
+    const groupName = `cg:${userMobileNo}`;
+
+    // Mark message as processed for this user
+    await redis.xack(streamKey, groupName, ack.streamId);
+
+    // Optional: also remove the entry entirely from the stream
+    await redis.xdel(streamKey, ack.streamId);
+
+    logger.info(`Acked & deleted message ${ack.streamId} for ${userMobileNo}`);
+  } catch (error) {
+    logger.error({ error }, "Error while acking/deleting redis stream");
+  }
 }
 
 async function publishAck(server: string, sentAck: ChatAck): Promise<boolean> {
