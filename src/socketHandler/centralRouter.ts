@@ -109,35 +109,53 @@ async function checkComingConnection(
 
 // deliver offline messages and attach streamId
 
-async function deliverOfflineMessages(ws:WebSocket, userMobileNo:string){
+
+export async function deliverOfflineMessages(
+  ws: WebSocket,
+  userMobileNo: string,
+  serverId: string
+) {
+  const streamKey = "chat.messages";
+  const groupName = `cg:${userMobileNo}`;
+  const consumerName = `c:${userMobileNo}:${serverId}`;
+
   try {
-    const streamKey = `offlineMessage:${userMobileNo}`;
-    const messages = await redis.xrange(streamKey, "-", "+");
+    logger.info({ userMobileNo }, "Delivering offline messages…");
 
-    if (!messages.length) return;
+    const messages = await redis.xreadgroup(
+      "GROUP", groupName, consumerName,
+      "COUNT", 500,
+      "STREAMS", streamKey, "0"   // read from pending entries
+    );
 
-    for (const [id, fields] of messages) {
-      // Convert array of fields to an object
-      const messageObj = Object.fromEntries(
-        fields.reduce((acc, val, i) => {
-          if (i % 2 === 0) acc.push([val, fields[i + 1]]);
-          return acc;
-        }, [] as [string, string][])
-      );
-
-      // Attach Redis stream entry ID as streamId
-      messageObj.streamId = id;
-
-      // Send message to client
-      ws.send(JSON.stringify({
-        type: "chat",
-        ...messageObj,
-        timestamp:parseInt(messageObj.timestamp)
-      }));
+    if (!messages || messages.length === 0) {
+      logger.info({ userMobileNo }, "No offline messages");
+      return;
     }
+
+    for (const [stream, entries] of messages as [string, [string, string[]][]][]) {
+      for (const [id, rawFields] of entries as [string, string[]][]) {
+        const msg = parseFields(rawFields);
+        msg.streamId = id;
+
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "chat",
+              ...msg,
+              timestamp: msg.timestamp ? parseInt(msg.timestamp) : Date.now(),
+            })
+          );
+        } else {
+          logger.warn({ userMobileNo }, "WebSocket closed mid-delivery");
+          return;
+        }
+      }
+    }
+
+    logger.info({ userMobileNo, count: messages.length }, "Offline delivery complete");
   } catch (error) {
-    logger.error("Error delivering offline messages:");
-    console.error(error);
+    logger.error({ error, userMobileNo }, "Error delivering offline messages");
   }
 }
 
@@ -155,7 +173,7 @@ export default function registerSocketHandlers(wss: WebSocket.Server) {
 
     activeConnection.set(ws, true)
 
-    await deliverOfflineMessages(ws, user.mobileNo)
+   await deliverOfflineMessages(ws, user.mobileNo, serverId)
 
     ws.on("pong", () => {
       console.log("got ping from client.")
@@ -317,4 +335,12 @@ async function terminateUserFromRedis(userMobileNo:string){
     logger.error({error}, "error happened while terminating user");
     
   }
+}
+
+function parseFields(rawFields: string[]) {
+  const obj: Record<string, string> = {};
+  for (let i = 0; i < rawFields.length; i += 2) {
+    obj[rawFields[i]] = rawFields[i + 1];
+  }
+  return obj;
 }
