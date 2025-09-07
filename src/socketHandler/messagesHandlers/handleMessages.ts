@@ -27,15 +27,36 @@ export async function handleChatMessages(ws:WebSocket,sentPayload:ChatMessage, r
             sendSystemInfoMessage(ws, "dear user you have been blocked cant send messages!")
             break;
         case "offline":
-            storeOfflineMessages(sentPayload)
+            const offlinestreamid = await storeMessagesInStream(sentPayload,"online")
+
+            if(offlinestreamid== null){
+                logger.info("error could not be saved to redis stream")
+                break;
+            }
+            else{
+                logger.info("message saved successfully in redis.")
+            }
             break;
 
         case "online":
+            const streamid = await storeMessagesInStream(sentPayload,"online")
+
+            if(streamid == null){
+                logger.info("error could not be saved to redis stream")
+                break;
+            }
             const recipientServer = userDetails.server 
+
+            const updatedPayload:ChatMessage = {
+                    ...sentPayload,
+                    streamId:streamid
+            }
+
             if(recipientServer == serverId){
                 const recipientWsInstance = routingMap.get(sentPayload.to)
+             
                 if(recipientWsInstance && recipientWsInstance.readyState === WebSocket.OPEN){
-                    recipientWsInstance.send(JSON.stringify(sentPayload))
+                    recipientWsInstance.send(JSON.stringify(updatedPayload))
                     logger.info("message sent to the other user")
                 }
                 else{
@@ -44,7 +65,7 @@ export async function handleChatMessages(ws:WebSocket,sentPayload:ChatMessage, r
                 break;
             }
 
-            const publishMessageStatus = await publishMessage(recipientServer, sentPayload)
+            const publishMessageStatus = await publishMessage(recipientServer, updatedPayload)
 
             if(publishMessageStatus){
                 sendSystemInfoMessage(ws, "message sent published successfully")
@@ -130,4 +151,34 @@ async function storeOfflineMessages(sentPayload:ChatMessage){
         logger.error("error happened while  storing the messages in redis")
         console.error(error)
     }
+}
+
+async function storeMessagesInStream(sentPayload:ChatMessage, mode:"offline"|"online"):Promise<string|null>{
+    logger.info("trying to add data in stream")
+    try {
+
+        const streamKey = "chat.messages"
+
+        const streamId = await redis.xadd(streamKey,
+             "*",
+             "to",sentPayload.to,
+             "from", sentPayload.from,
+             "messageId", sentPayload.messageId,
+             "mode",mode,
+             "message", sentPayload.message,
+             "timestamp", sentPayload.timestamp
+            )
+
+        if(streamId == null){
+            return null
+        }
+
+        return streamId;
+
+        
+    } catch (error) {
+        logger.error({error},"error while adding data into stream")
+        return null
+    }
+    
 }
