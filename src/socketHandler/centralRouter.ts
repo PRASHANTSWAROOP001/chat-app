@@ -120,40 +120,35 @@ export async function deliverOfflineMessages(
   const consumerName = `c:${userMobileNo}:${serverId}`;
 
   try {
-    logger.info({ userMobileNo }, "Delivering offline messages…");
+    logger.info({ userMobileNo }, "Delivering offline + crashed messages…");
 
-    const messages = await redis.xreadgroup(
+    // 1) Pending (unacked/crashed)
+    const pending = await redis.xreadgroup(
       "GROUP", groupName, consumerName,
       "COUNT", 500,
-      "STREAMS", streamKey, "0"   // read from pending entries
+      "STREAMS", streamKey, "0"
     );
 
-    if (!messages || messages.length === 0) {
-      logger.info({ userMobileNo }, "No offline messages");
-      return;
-    }
-
-    for (const [stream, entries] of messages as [string, [string, string[]][]][]) {
-      for (const [id, rawFields] of entries as [string, string[]][]) {
-        const msg = parseFields(rawFields);
-        msg.streamId = id;
-
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(
-            JSON.stringify({
-              type: "chat",
-              ...msg,
-              timestamp: msg.timestamp ? parseInt(msg.timestamp) : Date.now(),
-            })
-          );
-        } else {
-          logger.warn({ userMobileNo }, "WebSocket closed mid-delivery");
-          return;
-        }
+    if (pending) {
+      for (const [stream, entries] of pending as [string, [string, string[]][]][]) {
+        await deliverMessagesToSocket(ws, userMobileNo, entries);
       }
     }
 
-    logger.info({ userMobileNo, count: messages.length }, "Offline delivery complete");
+    // 2) Fresh (offline backlog, never delivered)
+    const fresh = await redis.xreadgroup(
+      "GROUP", groupName, consumerName,
+      "COUNT", 500,
+      "STREAMS", streamKey, ">"
+    );
+
+    if (fresh) {
+      for (const [stream, entries] of fresh as [string, [string, string[]][]][]) {
+        await deliverMessagesToSocket(ws, userMobileNo, entries);
+      }
+    }
+
+    logger.info({ userMobileNo }, "Offline delivery complete");
   } catch (error) {
     logger.error({ error, userMobileNo }, "Error delivering offline messages");
   }
@@ -343,4 +338,31 @@ function parseFields(rawFields: string[]) {
     obj[rawFields[i]] = rawFields[i + 1];
   }
   return obj;
+}
+
+async function deliverMessagesToSocket(
+  ws: WebSocket,
+  userMobileNo: string,
+  entries: [string, string[]][]
+) {
+  for (const [id, rawFields] of entries) {
+    const msg = parseFields(rawFields);
+    msg.streamId = id;
+
+    logger.info({ msg }, "Delivering message…");
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(
+        JSON.stringify({
+          type: "chat",
+          ...msg,
+          mode:"offline", // needs to be checked 
+          timestamp: msg.timestamp ? parseInt(msg.timestamp) : Date.now(),
+        })
+      );
+    } else {
+      logger.warn({ userMobileNo }, "WebSocket closed mid-delivery");
+      return;
+    }
+  }
 }

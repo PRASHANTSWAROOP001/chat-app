@@ -27,7 +27,7 @@ export async function handleChatMessages(ws:WebSocket,sentPayload:ChatMessage, r
             sendSystemInfoMessage(ws, "dear user you have been blocked cant send messages!")
             break;
         case "offline":
-            const offlinestreamid = await storeMessagesInStream(sentPayload,"online")
+            const offlinestreamid = await storeMessagesInStream(sentPayload,"offline")
 
             if(offlinestreamid== null){
                 logger.info("error could not be saved to redis stream")
