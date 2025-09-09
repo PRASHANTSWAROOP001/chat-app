@@ -58,11 +58,12 @@ export async function handleChatMessages(ws:WebSocket,sentPayload:ChatMessage, r
                 if(recipientWsInstance && recipientWsInstance.readyState === WebSocket.OPEN){
                     recipientWsInstance.send(JSON.stringify(updatedPayload))
                     logger.info("message sent to the other user")
+                    break;
                 }
                 else{
-                    logger.info("users socket connection is not open/found")
+                    logger.info("users socket connection not open/found on this server, falling back to publish/offline");
                 }
-                break;
+               
             }
 
             const publishMessageStatus = await publishMessage(recipientServer, updatedPayload)

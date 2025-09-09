@@ -55,12 +55,13 @@ export async function handleAck(
                     ) {
                         recipientWsInstance.send(JSON.stringify(sentAck));
                         logger.info("chat ack delivered to the user");
+                        break;
                     } else {
                         logger.warn(
-                            "error web socket connection is not open to send messages"
+                            "error web socket connection is not open to send messages/publishing ack."
                         );
                     }
-                    break;
+                    
                 }
 
                 const ackStatus = await publishAck(recipientServer, sentAck);

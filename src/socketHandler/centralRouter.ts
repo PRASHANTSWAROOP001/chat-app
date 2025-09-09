@@ -349,6 +349,15 @@ async function deliverMessagesToSocket(
     const msg = parseFields(rawFields);
     msg.streamId = id;
 
+    // 🔑 Filter: only deliver messages intended for this user
+    if (msg.to !== userMobileNo) {
+      logger.warn(
+        { userMobileNo, to: msg.to },
+        "Skipping message not meant for this user"
+      );
+      continue;
+    }
+
     logger.info({ msg }, "Delivering message…");
 
     if (ws.readyState === WebSocket.OPEN) {
@@ -356,7 +365,7 @@ async function deliverMessagesToSocket(
         JSON.stringify({
           type: "chat",
           ...msg,
-          mode:"offline", // needs to be checked 
+          mode: "offline", // override to indicate backlog delivery
           timestamp: msg.timestamp ? parseInt(msg.timestamp) : Date.now(),
         })
       );
