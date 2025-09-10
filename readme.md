@@ -1,6 +1,6 @@
 # 📱 WhatsApp Mini
 
-### Introduction
+## Introduction
 
 I’ve always been fascinated by how WhatsApp works under the hood. When I learned that **WebSockets** power its real-time communication, I decided to build a **teeny tiny WhatsApp clone** to understand the engineering challenges at scale.
 
@@ -8,7 +8,7 @@ This project doesn’t implement every WhatsApp feature, but it does cover the *
 
 ---
 
-### 🚀 Core Features
+## 🚀 Core Features
 
 * **Block / Unblock (at scale)**
   Fast checks before every message delivery — just like WhatsApp.
@@ -49,7 +49,7 @@ This project doesn’t implement every WhatsApp feature, but it does cover the *
 
 * ⚡ **Node.js + TypeScript** → Core backend runtime & type safety
 
-* 🔌 **ws (WebSocket Library)** → Handles real-time, bidirectional communication between clients and server with low overhead.
+* 🔌 **ws (WebSocket Library)** → Handles real-time, bidirectional communication
 
 * 🛠️ **Prisma** → Database ORM for Postgres
 
@@ -57,5 +57,124 @@ This project doesn’t implement every WhatsApp feature, but it does cover the *
 
 ---
 
+## 🏗️ Architecture Diagram
 
+![Diagram](../../Documents/final%20diagram%20001.png)
 
+---
+
+## ⚙️ Feature Design
+
+### 1. 🔒 Block / Unblock Feature
+
+**Problem**
+
+* Every message must check if the **sender is blocked** by the recipient.
+* At scale, this check must be extremely fast.
+* The only data we initially have about the recipient is their **mobile number**, which makes lookup tricky.
+
+**Solution**
+
+* Using Redis instead of a database (faster at scale).
+* Naïve approach:
+
+  * 1 lookup to translate mobile → user ID.
+  * 1 lookup to check block status.
+  * ❌ Two round trips = overhead.
+* Optimized approach:
+
+  * Store block data as:
+
+    ```
+    blockedUser:${blockerMobileNo} → Set(blockedIds)
+    ```
+  * Sender’s ID is carried in JWT, so we directly check with:
+
+    ```redis
+    SISMEMBER blockedUser:1234 5678
+    ```
+  * ✅ O(1) lookup with a single Redis operation.
+
+**Outcome**
+
+* Saved one Redis round trip per message.
+* Scales smoothly under high message volume.
+
+---
+
+### 2. 🟢 Reliable Online Status
+
+**Problem**
+
+* WebSockets are fragile: connections can silently drop.
+* If we rely only on `onConnect` / `onClose`, users may appear online for a long time after disconnecting.
+
+**Solution**
+
+* Use WebSocket **ping/pong** frames:
+
+  * Server sends `ping`.
+  * Client must reply with `pong`.
+* If 2 consecutive pings (\~60s) fail → connection dropped.
+* At that time, update status from **Online → Last Seen**.
+
+**Outcome**
+
+* Removes dead/unhealthy connections from server.
+* Maintains online/last seen status with \~1 min accuracy.
+* Much more reliable than naive connect/disconnect checks.
+
+---
+
+### 3. 🔄 Cross-Server Communication (Redis Pub/Sub)
+
+**Problem**
+
+* WebSockets suffer from **sticky connections**: once connected to a server, a client cannot easily hop to another.
+* If sender and receiver are on different servers, direct delivery breaks.
+
+**Solution**
+
+* Store each user’s `serverId` in Redis.
+* **Case 1: Same Server** → Deliver instantly in `O(1)` via in-memory map.
+* **Case 2: Different Servers** → Use **Redis Pub/Sub**:
+
+  * Message published to Redis.
+  * Only the recipient’s server (matching `serverId`) consumes it.
+  * That server forwards the payload via WebSocket.
+
+**Outcome**
+
+* Efficient cross-server messaging with minimal latency.
+* Prevents broadcasting to all servers → reduces risk of leaks.
+* Horizontally scalable → adding servers doesn’t break messaging.
+
+---
+
+### 4. 📩 Reliable Messaging (Redis Streams + ACKs)
+
+**Problem**
+
+* WebSockets alone are unreliable (connection may drop mid-delivery).
+* Messages need to persist until the recipient explicitly acknowledges receipt.
+
+**Solution**
+
+* Use **Redis Streams** + ACK mechanism:
+
+  * Message stored in stream **before** sending.
+  * Delivered via WebSocket.
+  * Recipient replies with ACK → server safely deletes from stream.
+* If recipient never ACKs, message remains in stream → retried until delivered.
+* Redis Streams allow:
+
+  * Consumer groups → multiple servers safely reading.
+  * Pending messages → automatically retried.
+
+**Outcome**
+
+* At-most-once reliable delivery with retries.
+* Offline messaging supported (pending messages delivered once user reconnects).
+* Stream growth managed with **capped size** based on infra scale.
+
+---
