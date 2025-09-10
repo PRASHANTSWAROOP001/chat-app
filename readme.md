@@ -58,7 +58,8 @@ This project doesn’t implement every WhatsApp feature, but it does cover the *
 ---
 
 ## 🏗️ Architecture Diagram
-<img width="1042" height="1192" alt="architecture diagram" src="https://github.com/user-attachments/assets/c48c8308-3eea-4225-9836-a7a69d02fe6c" />
+<img width="994" height="1189" alt="Architecture Diagram" src="https://github.com/user-attachments/assets/1dded0cd-d9d0-45eb-9f7c-dc5c55141de5" />
+
 
 
 
