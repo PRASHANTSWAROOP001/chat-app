@@ -1,3 +1,26 @@
+# Local env/config files
 .env
+*.env
+
+# Git files
+.git
 .gitignore
-.readme.md
+
+# Node.js deps
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-lock.yaml
+
+# Build output
+dist
+
+# OS / editor files
+.DS_Store
+*.swp
+.idea
+.vscode
+
+# Docker files themselves
+Dockerfile
+.dockerignore
