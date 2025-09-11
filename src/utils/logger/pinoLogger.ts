@@ -6,7 +6,7 @@ const transport:any = pino.transport({
         {
             target: 'pino/file',
             level:"info",
-            options:{destination:"logs/app.log"}
+            options:{destination:"/app/logs/app.log"}
         },
         {
             target: 'pino-pretty',
