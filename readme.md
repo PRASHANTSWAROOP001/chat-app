@@ -180,3 +180,209 @@ This project doesn’t implement every WhatsApp feature, but it does cover the *
 * Stream growth managed with **capped size** based on infra scale.
 
 ---
+
+## 📡 API Documentation
+
+#### 🔑 Authentication
+
+##### **1. Create Account (Signup)**
+
+```http
+POST /auth/signin
+```
+
+**Description:** Create a new account.
+
+**Payload**
+
+```json
+{
+  "name": "string",
+  "mobileNo": "string",
+  "password": "string"
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "message": "account created successfully",
+  "id": "string"
+}
+```
+
+---
+
+##### **2. Login**
+
+```http
+POST /auth/login
+```
+
+**Description:** Login with mobile number and password.
+
+**Payload**
+
+```json
+{
+  "mobileNo": "string",
+  "password": "string"
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "message": "login successful",
+  "token": "auth_token"
+}
+```
+
+---
+
+#### 🚫 Block / Unblock Actions
+
+##### **3. Block User**
+
+```http
+POST /block-action/block
+```
+
+**Description:** Block a user by mobile number (requires Bearer token).
+
+**Payload**
+
+```json
+{
+  "blockedUserMobileNo": "string"
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "message": "User blocked successfully"
+}
+```
+
+---
+
+##### **4. Unblock User**
+
+```http
+DELETE /block-action/unblock?mobileNo=10digitNo
+```
+
+**Description:** Unblock a user (requires Bearer token).
+
+**Response**
+
+```json
+{
+  "success": true,
+  "message": "User unblocked successfully"
+}
+```
+
+---
+
+#### 👤 Profile
+
+##### **5. Get Last Seen**
+
+```http
+GET /profile/lastseen?mobileNo=10digitNo
+```
+
+**Description:** Fetch last seen status of a user (requires Bearer token).
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "username": "string",
+    "mobileNo": "string",
+    "lastSeen": "string (optional)"
+  }
+}
+```
+
+---
+
+
+## 🚀 Quick Start
+
+Follow these steps to run **WhatsApp Mini** locally:
+
+#### 1️⃣ Clone the repository
+
+```bash
+git clone https://github.com/PRASHANTSWAROOP001/chat-app.git
+cd chat-app
+```
+
+#### 2️⃣ Install dependencies & build
+
+```bash
+npm install
+npm run build
+```
+
+#### 3️⃣ Start dependencies (Postgres + Redis)
+
+Using Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+> ⚠️ Don’t forget to run `docker compose down` when done, otherwise containers will keep running in the background.
+
+#### 4️⃣ Start the server
+
+```bash
+npm run dev
+```
+
+Your backend is now running on **[http://localhost:4000](http://localhost:5000)** 🎉
+
+
+---
+
+### 📂 Project Structure
+
+```bash
+├── dist                  # Compiled JS output (after build)
+├── logs                  # Application logs
+├── node_modules          # Dependencies
+├── prisma                # Prisma schema & migrations
+├── src                   # Application source code
+│   ├── controller        # Route controllers
+│   ├── middleware        # Express middleware
+│   ├── routes            # API routes
+│   ├── socketHandler     # WebSocket event handling
+│   ├── types             # TypeScript types/interfaces
+│   ├── utils             # Utility functions/helpers
+│   └── server.ts         # Application entry point
+├── .dockerignore         # Docker ignore rules
+├── .env                  # Local environment variables
+├── .env.sample           # Sample env vars for setup
+├── .gitignore            # Git ignore rules
+├── docker-compose.yml    # Redis + Postgres services
+├── Dockerfile            # App container definition
+├── package-lock.json     
+├── package.json          
+├── readme.md             # Project documentation
+├── tsconfig.json         # TypeScript config
+└── tsconfig.tsbuildinfo  # TS incremental build info
+```
+
+---
