@@ -318,7 +318,7 @@ GET /profile/lastseen?mobileNo=10digitNo
 ---
 
 
-## 🚀 Quick Start
+### 🚀 Quick Start
 
 Follow these steps to run **WhatsApp Mini** locally:
 
@@ -352,7 +352,7 @@ docker compose up -d
 npm run dev
 ```
 
-Your backend is now running on **[http://localhost:4000](http://localhost:5000)** 🎉
+Your backend is now running on **[http://localhost:5000](http://localhost:5000)** 🎉
 
 
 ---
